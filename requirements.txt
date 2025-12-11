@@ -1,0 +1,35 @@
+# PDF Processing
+pypdf2>=3.0.0
+pdfplumber>=0.10.0
+
+# Text Processing
+tiktoken>=0.5.0
+
+# Vector Store
+chromadb>=0.4.0
+
+# Embeddings (Open Source)
+sentence-transformers>=2.2.0
+torch>=2.0.0
+
+# Generation (Open Source) - pick based on your hardware
+transformers>=4.36.0
+accelerate>=0.25.0
+# bitsandbytes>=0.41.0  # uncomment for 4-bit quantization (Linux/CUDA only)
+
+# API
+fastapi>=0.109.0
+uvicorn>=0.27.0
+python-multipart>=0.0.6
+
+# Readability & Evaluation
+textstat>=0.7.3
+
+# Utilities
+python-dotenv>=1.0.0
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
+numpy>=1.24.0
+
+# Dev
+pytest>=7.0.0

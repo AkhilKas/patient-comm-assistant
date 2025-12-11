@@ -1,0 +1,11 @@
+.env
+.venv/
+venv/
+__pycache__/
+*.pyc
+data/vector_store/
+.DS_Store
+.idea/
+.vscode/
+*.log
+data/sample_docs/*.pdf
