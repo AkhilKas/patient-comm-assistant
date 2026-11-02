@@ -2,7 +2,8 @@
 
 An AI-powered RAG (Retrieval-Augmented Generation) application that transforms complex medical documents into patient-friendly explanations at an 8th-grade reading level.
 
-![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)
+[![CI](https://github.com/AkhilKas/patient-comm-assistant/actions/workflows/ci.yml/badge.svg)](https://github.com/AkhilKas/patient-comm-assistant/actions/workflows/ci.yml)
+![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)
 ![React](https://img.shields.io/badge/React-18.2-61DAFB.svg)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.109-009688.svg)
 ![HuggingFace](https://img.shields.io/badge/🤗_HuggingFace-Transformers-yellow.svg)
@@ -103,7 +104,7 @@ patient-comm-assistant/
 ## 🚀 Quick Start
 
 ### Prerequisites
-- Python 3.10+
+- Python 3.11+ (required by transformers 5)
 - Node.js 18+
 - 8GB+ RAM for LLM inference (4GB+ with the 4-bit MLX models on Apple Silicon)
 
@@ -136,6 +137,8 @@ RUN_LLM_TESTS=1 pytest      # also run LLM tests (downloads the model)
 ```
 
 No running server is needed; the API tests use FastAPI's `TestClient` with a temporary vector store.
+
+GitHub Actions (`.github/workflows/ci.yml`) runs the test suite on Python 3.11 and 3.12 and builds the frontend on every pull request and every push to `main`.
 
 ### Frontend Setup
 
