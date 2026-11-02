@@ -99,3 +99,5 @@ htmlcov/
 *.pth
 *.onnx
 models/
+# Model cache downloaded by app.warmup
+.models/
