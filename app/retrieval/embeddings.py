@@ -7,6 +7,8 @@ Two backends:
 - "sentence-transformers": any HuggingFace model, via PyTorch.
 """
 
+import os
+from functools import cached_property
 from pathlib import Path
 from typing import Optional
 from dataclasses import dataclass
@@ -16,10 +18,11 @@ import numpy as np
 ONNX_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 
 # ONNX Runtime's memory arena keeps the largest batch's scratch memory for the
-# life of the process, and every text is padded to 256 tokens. Measured growth
-# after load: batch 32 → +460MB, 8 → +109MB, 4 → +43MB. Small batches keep
-# the server within 512MB at little cost in speed.
-ONNX_BATCH_SIZE = 4
+# life of the process. Measured growth after load on Linux with 256-token
+# texts: batch 32 → ~+460MB, 4 → +50MB, 2 → +22MB, 1 → +5MB, while batch 1
+# was only ~8% slower than batch 4. One text at a time keeps the server well
+# within 512MB.
+ONNX_BATCH_SIZE = 1
 
 
 @dataclass
@@ -35,7 +38,39 @@ def _onnx_embedder(cache_dir: Optional[str] = None):
     """Chroma's ONNX MiniLM, optionally downloading to/reading from cache_dir."""
     from chromadb.utils.embedding_functions import ONNXMiniLM_L6_V2
 
-    embedder = ONNXMiniLM_L6_V2(preferred_providers=["CPUExecutionProvider"])
+    class LeanONNXMiniLM(ONNXMiniLM_L6_V2):
+        """Same model and outputs as Chroma's, tuned for small hosts.
+
+        - Pads each batch to its longest text (as sentence-transformers does)
+          instead of always to 256 tokens. Padding is masked out, so vectors
+          are unchanged, but a short query no longer costs a full 256-token
+          pass, and inference scratch memory shrinks with it.
+        - Disables weight pre-packing, which keeps a second, re-laid-out copy
+          of the weights (~25MB).
+        """
+
+        @cached_property
+        def tokenizer(self):
+            tokenizer = self.Tokenizer.from_file(
+                os.path.join(self.DOWNLOAD_PATH, self.EXTRACTED_FOLDER_NAME, "tokenizer.json")
+            )
+            tokenizer.enable_truncation(max_length=self.max_tokens())
+            tokenizer.enable_padding(pad_id=0, pad_token="[PAD]")  # to longest in batch
+            return tokenizer
+
+        @cached_property
+        def model(self):
+            so = self.ort.SessionOptions()
+            so.log_severity_level = 3
+            so.graph_optimization_level = self.ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+            so.add_session_config_entry("session.disable_prepacking", "1")
+            return self.ort.InferenceSession(
+                os.path.join(self.DOWNLOAD_PATH, self.EXTRACTED_FOLDER_NAME, "model.onnx"),
+                providers=["CPUExecutionProvider"],
+                sess_options=so,
+            )
+
+    embedder = LeanONNXMiniLM(preferred_providers=["CPUExecutionProvider"])
     if cache_dir:
         embedder.DOWNLOAD_PATH = Path(cache_dir) / "onnx" / ONNXMiniLM_L6_V2.MODEL_NAME
     return embedder
