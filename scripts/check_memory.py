@@ -17,7 +17,8 @@ from pathlib import Path
 import httpx
 
 ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "tests"))
+# Running a script puts its own directory on sys.path, not the repo root
+sys.path[:0] = [str(ROOT), str(ROOT / "tests")]
 from conftest import SAMPLE_DISCHARGE, make_pdf  # noqa: E402
 
 PORT = 8799
@@ -25,8 +26,14 @@ BASE = f"http://127.0.0.1:{PORT}"
 
 
 def memory_mb(pid: int) -> dict[str, float]:
+    status = Path(f"/proc/{pid}/status")
+    if not status.exists():
+        # Not Linux: current RSS only, so "peak" is a lower bound
+        rss = int(subprocess.check_output(["ps", "-o", "rss=", "-p", str(pid)])) / 1024
+        print("⚠ /proc not available; peak memory is approximated by current RSS")
+        return {"VmRSS": rss, "VmHWM": rss}
     fields = {}
-    for line in Path(f"/proc/{pid}/status").read_text().splitlines():
+    for line in status.read_text().splitlines():
         key, _, value = line.partition(":")
         if key in ("VmRSS", "VmHWM"):
             fields[key] = int(value.split()[0]) / 1024
