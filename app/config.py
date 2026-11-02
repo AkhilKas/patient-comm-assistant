@@ -1,38 +1,45 @@
-"""Application configuration and settings."""
+"""Application configuration and settings.
 
-from pydantic_settings import BaseSettings
-from pydantic import Field
-from pathlib import Path
+Every field can be overridden by an environment variable of the same name
+(case-insensitive), e.g. LLM_PRESET=mistral, or via a .env file.
+"""
+
+from typing import Optional
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
-    
-    # API Keys
-    openai_api_key: str = Field(default="", env="OPENAI_API_KEY")
-    
-    # Paths
-    base_dir: Path = Path(__file__).parent.parent
-    data_dir: Path = base_dir / "data"
-    vector_store_dir: Path = data_dir / "vector_store"
-    
-    # Chunking settings
-    chunk_size: int = 512
-    chunk_overlap: int = 50
-    
-    # Embedding settings
-    embedding_model: str = "text-embedding-3-small"
-    
-    # Generation settings
-    generation_model: str = "gpt-4o-mini"
-    target_reading_level: int = 8
-    
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    # HuggingFace token (only needed for gated models such as Llama 3)
+    hf_token: Optional[str] = None
+
+    # Embeddings: preset name from EmbeddingModel.MODEL_PRESETS
+    embedding_preset: str = "fast"
+
+    # Generation: preset name from MedicalSimplifier.MODEL_PRESETS
+    llm_preset: str = "phi3"
+    # "auto" uses MLX on Apple Silicon when mlx-lm is installed, else torch
+    llm_backend: str = "auto"
+    load_in_4bit: bool = False  # torch backend on CUDA only, requires bitsandbytes
+
     # Vector store
-    collection_name: str = "discharge_docs"
-    
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
+    vector_store_path: str = "data/vector_store"
+    collection_name: str = "patient_docs"
+
+    # Chunking (token counts)
+    chunk_size: int = 300
+    chunk_overlap: int = 50
+
+    # Readability
+    target_grade_level: float = 8.0
 
 
 settings = Settings()

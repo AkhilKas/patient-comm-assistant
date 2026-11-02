@@ -39,13 +39,11 @@ class MedicalTextChunker:
         r"INSTRUCTIONS?|CARE PLAN|TREATMENT|PRECAUTIONS?)\s*:?\s*$",
     ]
     
-    def __init__(self, chunk_size: int = 512, chunk_overlap: int = 50, model_name: str = "gpt-4o-mini"):
+    def __init__(self, chunk_size: int = 512, chunk_overlap: int = 50, encoding_name: str = "cl100k_base"):
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
-        try:
-            self.tokenizer = tiktoken.encoding_for_model(model_name)
-        except KeyError:
-            self.tokenizer = tiktoken.get_encoding("cl100k_base")
+        # tiktoken is used only as a local tokenizer to approximate chunk sizes
+        self.tokenizer = tiktoken.get_encoding(encoding_name)
     
     def count_tokens(self, text: str) -> int:
         return len(self.tokenizer.encode(text))

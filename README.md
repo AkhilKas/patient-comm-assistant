@@ -58,7 +58,8 @@ A two-stage RAG pipeline that:
 - **FastAPI** - High-performance async API framework
 - **ChromaDB** - Vector database for semantic search
 - **Sentence Transformers** - Open-source embeddings (all-MiniLM-L6-v2)
-- **Hugging Face Transformers** - LLM inference (Phi-3, Mistral, Llama)
+- **Hugging Face Transformers** - LLM inference (Phi-3, Mistral, Llama) on CUDA / MPS / CPU
+- **MLX (mlx-lm)** - 4-bit LLM inference on Apple Silicon, used automatically when installed (`LLM_BACKEND=auto`)
 - **PyPDF2 / pdfplumber** - PDF text extraction
 - **textstat** - Readability metrics calculation
 
@@ -74,7 +75,7 @@ A two-stage RAG pipeline that:
 patient-comm-assistant/
 ├── app/
 │   ├── main.py                 # FastAPI application
-│   ├── config.py               # Configuration settings
+│   ├── config.py               # Settings (env vars / .env, see .env.example)
 │   ├── ingestion/
 │   │   ├── pdf_loader.py       # PDF extraction & preprocessing
 │   │   └── chunker.py          # Medical-aware text chunking
@@ -94,8 +95,7 @@ patient-comm-assistant/
 │   ├── package.json
 │   ├── vite.config.js
 │   └── tailwind.config.js
-├── data/
-│   └── sample_docs/            # Sample PDFs for testing
+├── tests/                      # pytest suite
 ├── requirements.txt
 └── README.md
 ```
@@ -105,7 +105,7 @@ patient-comm-assistant/
 ### Prerequisites
 - Python 3.10+
 - Node.js 18+
-- 8GB+ RAM (for LLM inference)
+- 8GB+ RAM for LLM inference (4GB+ with the 4-bit MLX models on Apple Silicon)
 
 ### Backend Setup
 
@@ -121,9 +121,21 @@ source venv/bin/activate  # Windows: venv\Scripts\activate
 # Install dependencies
 pip install -r requirements.txt
 
+# Optional: override defaults (model presets, paths, HF token)
+cp .env.example .env
+
 # Start backend server
 uvicorn app.main:app --reload
 ```
+
+### Running Tests
+
+```bash
+pytest                      # ingestion, readability, retrieval, API
+RUN_LLM_TESTS=1 pytest      # also run LLM tests (downloads the model)
+```
+
+No running server is needed; the API tests use FastAPI's `TestClient` with a temporary vector store.
 
 ### Frontend Setup
 

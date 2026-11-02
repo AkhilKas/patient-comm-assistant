@@ -17,11 +17,12 @@ import tempfile
 # Add parent to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from app.config import settings
 from app.ingestion.pdf_loader import MedicalPDFLoader
 from app.ingestion.chunker import MedicalTextChunker
 from app.retrieval.embeddings import get_embedding_model
 from app.retrieval.vector_store import VectorStore
-from app.evaluation.readability import ReadabilityScorer, check_readability
+from app.evaluation.readability import ReadabilityScorer
 
 
 # ============================================================
@@ -32,8 +33,8 @@ class AppState:
     vector_store: Optional[VectorStore] = None
     embedding_model = None
     simplifier = None  # Loaded lazily to save memory
-    readability_scorer = ReadabilityScorer(target_grade_level=8.0)
-    chunker = MedicalTextChunker(chunk_size=300, chunk_overlap=50)
+    readability_scorer = ReadabilityScorer(target_grade_level=settings.target_grade_level)
+    chunker = MedicalTextChunker(chunk_size=settings.chunk_size, chunk_overlap=settings.chunk_overlap)
     pdf_loader = MedicalPDFLoader()
 
 state = AppState()
@@ -50,13 +51,12 @@ async def lifespan(app: FastAPI):
     
     # Load embedding model
     print("Loading embedding model...")
-    state.embedding_model = get_embedding_model(use_preset="fast")
-    
+    state.embedding_model = get_embedding_model(use_preset=settings.embedding_preset)
+
     # Create vector store
-    persist_dir = os.getenv("VECTOR_STORE_PATH", "data/vector_store")
     state.vector_store = VectorStore(
-        collection_name="patient_docs",
-        persist_directory=persist_dir,
+        collection_name=settings.collection_name,
+        persist_directory=settings.vector_store_path,
         embedding_model=state.embedding_model
     )
     print(f"✓ Vector store ready ({state.vector_store.get_chunk_count()} chunks)")
@@ -133,9 +133,23 @@ def get_simplifier():
     """Lazy load the LLM simplifier to save memory."""
     if state.simplifier is None:
         print("Loading LLM simplifier (first request, may take a moment)...")
-        from app.generation.simplifier import create_simplifier
-        state.simplifier = create_simplifier(use_preset="phi3")
+        from app.generation.simplifier import MedicalSimplifier
+        state.simplifier = MedicalSimplifier(
+            use_preset=settings.llm_preset,
+            backend=settings.llm_backend,
+            load_in_4bit=settings.load_in_4bit,
+            hf_token=settings.hf_token,
+        )
     return state.simplifier
+
+
+def run_llm(fn, *args):
+    """Call a simplifier method, mapping oversized input to HTTP 413."""
+    from app.generation.simplifier import InputTooLongError
+    try:
+        return fn(*args)
+    except InputTooLongError as e:
+        raise HTTPException(status_code=413, detail=str(e))
 
 
 def format_context_for_answer(results) -> str:
@@ -254,13 +268,13 @@ async def ask_question(request: QuestionRequest):
         # Use LLM to generate simplified answer
         simplifier = get_simplifier()
         context = "\n\n".join([r.content for r in results])
-        answer = simplifier.answer_question(request.question, context)
+        answer = run_llm(simplifier.answer_question, request.question, context)
     else:
         # Return formatted context directly
         answer = format_context_for_answer(results)
     
     # Check readability
-    readability = check_readability(answer)
+    readability = state.readability_scorer.score(answer)
     
     return QuestionResponse(
         question=request.question,
@@ -276,13 +290,13 @@ async def simplify_text(request: SimplifyRequest):
     simplifier = get_simplifier()
     
     # Get readability before
-    readability_before = check_readability(request.text)
+    readability_before = state.readability_scorer.score(request.text)
     
     # Simplify
-    result = simplifier.simplify_text(request.text)
+    result = run_llm(simplifier.simplify_text, request.text)
     
     # Get readability after
-    readability_after = check_readability(result.simplified_text)
+    readability_after = state.readability_scorer.score(result.simplified_text)
     
     # Calculate improvement
     improvement = {
@@ -307,7 +321,7 @@ async def simplify_text(request: SimplifyRequest):
 @app.post("/readability")
 async def analyze_readability(request: ReadabilityRequest):
     """Analyze readability of text without simplification."""
-    score = check_readability(request.text)
+    score = state.readability_scorer.score(request.text)
     return {
         "text_preview": request.text[:200] + "..." if len(request.text) > 200 else request.text,
         "readability": score.to_dict(),
@@ -315,7 +329,7 @@ async def analyze_readability(request: ReadabilityRequest):
         "recommendation": (
             "This text is patient-friendly!" 
             if score.is_patient_friendly 
-            else f"Consider simplifying. Current grade level: {score.avg_grade_level:.1f}, target: ≤8"
+            else f"Consider simplifying. Current grade level: {score.avg_grade_level:.1f}, target: ≤{settings.target_grade_level:g}"
         )
     }
 
