@@ -33,15 +33,55 @@ jobs:
           pip install torch --index-url https://download.pytorch.org/whl/cpu
           pip install -r requirements.txt
 
-      - name: Cache HuggingFace models
+      - name: Cache embedding model
         uses: actions/cache@v4
         with:
-          path: ~/.cache/huggingface
-          key: hf-${{ runner.os }}-all-MiniLM-L6-v2
+          path: ~/.cache/chroma/onnx_models
+          key: onnx-${{ runner.os }}-all-MiniLM-L6-v2
 
       # LLM tests are skipped unless RUN_LLM_TESTS=1 (multi-GB model download)
       - name: Run tests
         run: pytest -v
+
+  lean:
+    # Mirrors the Render free deployment: core requirements only (no torch)
+    name: Lean server (512MB budget)
+    runs-on: ubuntu-latest
+    env:
+      MODEL_CACHE_DIR: .models
+      TIKTOKEN_CACHE_DIR: .models/tiktoken
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-core.txt
+
+      - name: Install core dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-core.txt pytest httpx
+
+      - name: Check torch is not installed
+        run: python -c "import importlib.util as u, sys; sys.exit(u.find_spec('torch') is not None)"
+
+      - name: Cache models
+        uses: actions/cache@v4
+        with:
+          path: .models
+          key: models-${{ runner.os }}-all-MiniLM-L6-v2-cl100k
+
+      - name: Download models (same step as the Render build)
+        run: python -m app.warmup
+
+      - name: Run tests
+        run: pytest -v
+
+      # Render free has 512MB; keep ~100MB headroom for request spikes
+      - name: Check peak memory
+        run: python scripts/check_memory.py --budget-mb 400
 
   frontend:
     name: Frontend build
