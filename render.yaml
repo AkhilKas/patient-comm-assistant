@@ -3,8 +3,8 @@
 #
 # Everything runs on Render's free tier:
 # - The backend installs requirements-core.txt only (no PyTorch). Embeddings
-#   run on ONNX, which keeps peak memory under the free tier's 512MB (CI
-#   enforces a 400MB budget). There's no local LLM, so ENABLE_LLM is off:
+#   run on ONNX, which keeps peak memory under the free tier's 512MB
+#   (~340MB measured on Linux; CI enforces a 400MB budget). There's no local LLM, so ENABLE_LLM is off:
 #   upload, Q&A retrieval and readability work; /simplify returns 503.
 # - Free services sleep after 15 minutes idle (about 1 minute to wake up)
 #   and have no persistent disk, so uploaded documents are cleared whenever
@@ -38,6 +38,9 @@ services:
         value: .models
       - key: TIKTOKEN_CACHE_DIR
         value: .models/tiktoken
+      # CMU dictionary for readability syllable counts
+      - key: NLTK_DATA
+        value: .models/nltk_data
 
   # --------------------------------------------------------------- frontend
   - type: web

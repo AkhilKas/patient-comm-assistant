@@ -50,6 +50,7 @@ jobs:
     env:
       MODEL_CACHE_DIR: .models
       TIKTOKEN_CACHE_DIR: .models/tiktoken
+      NLTK_DATA: .models/nltk_data
     steps:
       - uses: actions/checkout@v4
 
@@ -71,7 +72,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .models
-          key: models-${{ runner.os }}-all-MiniLM-L6-v2-cl100k
+          key: models-${{ runner.os }}-all-MiniLM-L6-v2-cl100k-cmudict
 
       - name: Download models (same step as the Render build)
         run: python -m app.warmup
