@@ -9,12 +9,13 @@ tiktoken>=0.5.0
 chromadb>=0.4.0
 
 # Embeddings (Open Source)
-sentence-transformers>=2.2.0
+sentence-transformers>=6.0.0
 torch>=2.0.0
 
 # Generation (Open Source) - pick based on your hardware
-transformers>=4.36.0
+transformers>=5.7.0
 accelerate>=0.25.0
+mlx-lm>=0.32.0; sys_platform == "darwin" and platform_machine == "arm64"  # Apple Silicon 4-bit backend
 # bitsandbytes>=0.41.0  # uncomment for 4-bit quantization (Linux/CUDA only)
 
 # API
@@ -33,3 +34,4 @@ numpy>=1.24.0
 
 # Dev
 pytest>=7.0.0
+httpx>=0.24.0  # required by fastapi.testclient
