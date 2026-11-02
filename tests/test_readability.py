@@ -22,6 +22,24 @@ def test_compare_reports_improvement():
     assert result["met_target"]
 
 
+def test_compact_syllable_table_matches_cmudict():
+    import nltk
+    from textstat.backend.counts import _count_syllables
+    from app.evaluation.syllables import ensure_cmudict, syllable_table
+
+    assert getattr(_count_syllables.get_cmudict, "_compact", False), "patch not installed"
+
+    ensure_cmudict()
+    full = nltk.corpus.cmudict.dict()
+    table = syllable_table()
+    words = {w.strip(".,:;()-").lower() for w in (COMPLEX_TEXT + SIMPLE_TEXT).split()}
+    words = [w for w in words if w in full]
+    assert len(words) > 40
+    for w in words:
+        expected = sum(1 for p in full[w][0] if p[-1].isdigit())
+        assert sum(1 for p in table[w][0] if p[-1].isdigit()) == expected, w
+
+
 def test_short_text_short_circuits():
     score = ReadabilityScorer().score("Take one pill.")
     assert score.avg_grade_level == 0.0
