@@ -1,22 +1,28 @@
 # Render Blueprint: https://render.com/docs/blueprint-spec
 # Deploy: Render dashboard → New → Blueprint → select this repo.
 #
-# Backend runs on Standard (1 CPU / 2GB). That fits the API and embedding
-# model (~500MB) but not a local LLM, so ENABLE_LLM is off: upload, Q&A
-# retrieval and readability work; /simplify returns 503.
+# Everything runs on Render's free tier:
+# - The backend installs requirements-core.txt only (no PyTorch). Embeddings
+#   run on ONNX, which keeps peak memory under the free tier's 512MB (CI
+#   enforces a 400MB budget). There's no local LLM, so ENABLE_LLM is off:
+#   upload, Q&A retrieval and readability work; /simplify returns 503.
+# - Free services sleep after 15 minutes idle (about 1 minute to wake up)
+#   and have no persistent disk, so uploaded documents are cleared whenever
+#   the backend restarts or sleeps.
 
 services:
   # ---------------------------------------------------------------- backend
   - type: web
     name: patient-comm-api
     runtime: python
-    plan: 1c-2g # "Standard": 1 CPU, 2GB RAM
+    plan: free
     region: oregon
-    # CPU-only torch first: the default wheel pulls ~2GB of CUDA libraries
+    # Models are downloaded at build time into the project directory, which
+    # is kept for runtime, so cold starts don't re-download them
     buildCommand: >-
       pip install --upgrade pip &&
-      pip install torch --index-url https://download.pytorch.org/whl/cpu &&
-      pip install -r requirements.txt
+      pip install -r requirements-core.txt &&
+      python -m app.warmup
     # A single worker: app state (vector store, models) lives in-process
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /
@@ -28,19 +34,10 @@ services:
     envVars:
       - key: ENABLE_LLM
         value: "false"
-      - key: LLM_BACKEND
-        value: torch
-      - key: VECTOR_STORE_PATH
-        value: /var/data/vector_store
-      # Cache the embedding model on the disk so restarts don't re-download it
-      - key: HF_HOME
-        value: /var/data/huggingface
-    # Persistent disk keeps the ChromaDB index across deploys and restarts.
-    # Note: services with a disk can't scale out and skip zero-downtime deploys.
-    disk:
-      name: data
-      mountPath: /var/data
-      sizeGB: 1
+      - key: MODEL_CACHE_DIR
+        value: .models
+      - key: TIKTOKEN_CACHE_DIR
+        value: .models/tiktoken
 
   # --------------------------------------------------------------- frontend
   - type: web
