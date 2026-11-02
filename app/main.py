@@ -131,6 +131,11 @@ class UploadResponse(BaseModel):
 
 def get_simplifier():
     """Lazy load the LLM simplifier to save memory."""
+    if not settings.enable_llm:
+        raise HTTPException(
+            status_code=503,
+            detail="AI simplification is not available on this deployment.",
+        )
     if state.simplifier is None:
         print("Loading LLM simplifier (first request, may take a moment)...")
         from app.generation.simplifier import MedicalSimplifier
@@ -185,7 +190,8 @@ async def root():
     return {
         "status": "healthy",
         "service": "Patient Communication Assistant",
-        "chunks_indexed": state.vector_store.get_chunk_count() if state.vector_store else 0
+        "chunks_indexed": state.vector_store.get_chunk_count() if state.vector_store else 0,
+        "llm_enabled": settings.enable_llm,
     }
 
 

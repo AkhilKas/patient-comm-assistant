@@ -24,7 +24,10 @@ class Settings(BaseSettings):
     # Embeddings: preset name from EmbeddingModel.MODEL_PRESETS
     embedding_preset: str = "fast"
 
-    # Generation: preset name from MedicalSimplifier.MODEL_PRESETS
+    # Generation: set false on hosts without enough RAM for an LLM (~8GB);
+    # /simplify and simplified /ask answers then return 503
+    enable_llm: bool = True
+    # Preset name from MedicalSimplifier.MODEL_PRESETS
     llm_preset: str = "phi3"
     # "auto" uses MLX on Apple Silicon when mlx-lm is installed, else torch
     llm_backend: str = "auto"
