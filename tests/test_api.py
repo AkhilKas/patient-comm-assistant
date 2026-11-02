@@ -72,7 +72,7 @@ def test_upload_pdf_then_ask(client, empty_index):
 
 
 def test_simplify_too_long_returns_413(client, monkeypatch):
-    from app.generation.simplifier import InputTooLongError
+    from app.generation.errors import InputTooLongError
 
     class TooLong:
         def simplify_text(self, text):

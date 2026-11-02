@@ -1,0 +1,27 @@
+# Core API: everything needed to serve upload, retrieval and readability.
+# No PyTorch/transformers; embeddings run on Chroma's bundled ONNX runtime.
+# Fits small hosts (e.g. Render free, 512MB). Used by render.yaml.
+
+# PDF Processing
+pypdf2>=3.0.0
+pdfplumber>=0.10.0
+
+# Text Processing
+tiktoken>=0.5.0
+
+# Vector Store + ONNX embeddings (all-MiniLM-L6-v2)
+chromadb>=1.0.0
+
+# API
+fastapi>=0.109.0
+uvicorn>=0.27.0
+python-multipart>=0.0.6
+
+# Readability & Evaluation
+textstat>=0.7.3
+
+# Utilities
+python-dotenv>=1.0.0
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
+numpy>=1.24.0

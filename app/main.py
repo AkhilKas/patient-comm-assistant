@@ -23,6 +23,7 @@ from app.ingestion.chunker import MedicalTextChunker
 from app.retrieval.embeddings import get_embedding_model
 from app.retrieval.vector_store import VectorStore
 from app.evaluation.readability import ReadabilityScorer
+from app.generation.errors import InputTooLongError
 
 
 # ============================================================
@@ -51,7 +52,11 @@ async def lifespan(app: FastAPI):
     
     # Load embedding model
     print("Loading embedding model...")
-    state.embedding_model = get_embedding_model(use_preset=settings.embedding_preset)
+    state.embedding_model = get_embedding_model(
+        use_preset=settings.embedding_preset,
+        backend=settings.embedding_backend,
+        cache_dir=settings.model_cache_dir,
+    )
 
     # Create vector store
     state.vector_store = VectorStore(
@@ -150,7 +155,6 @@ def get_simplifier():
 
 def run_llm(fn, *args):
     """Call a simplifier method, mapping oversized input to HTTP 413."""
-    from app.generation.simplifier import InputTooLongError
     try:
         return fn(*args)
     except InputTooLongError as e:

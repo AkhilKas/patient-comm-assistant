@@ -3,6 +3,11 @@
 from dataclasses import dataclass
 import textstat
 
+from . import syllables
+
+# Same scores as textstat's default, with ~40MB less memory
+syllables.install()
+
 
 @dataclass
 class ReadabilityScore:

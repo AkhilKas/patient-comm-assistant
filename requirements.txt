@@ -1,14 +1,8 @@
-# PDF Processing
-pypdf2>=3.0.0
-pdfplumber>=0.10.0
+# Full install for local development: core API + local LLMs + dev tools.
+# For a lean server without PyTorch, install requirements-core.txt only.
+-r requirements-core.txt
 
-# Text Processing
-tiktoken>=0.5.0
-
-# Vector Store
-chromadb>=0.4.0
-
-# Embeddings (Open Source)
+# Other embedding presets (balanced, medical) via sentence-transformers
 sentence-transformers>=6.0.0
 torch>=2.0.0
 
@@ -17,20 +11,6 @@ transformers>=5.7.0
 accelerate>=0.25.0
 mlx-lm>=0.32.0; sys_platform == "darwin" and platform_machine == "arm64"  # Apple Silicon 4-bit backend
 # bitsandbytes>=0.41.0  # uncomment for 4-bit quantization (Linux/CUDA only)
-
-# API
-fastapi>=0.109.0
-uvicorn>=0.27.0
-python-multipart>=0.0.6
-
-# Readability & Evaluation
-textstat>=0.7.3
-
-# Utilities
-python-dotenv>=1.0.0
-pydantic>=2.0.0
-pydantic-settings>=2.0.0
-numpy>=1.24.0
 
 # Dev
 pytest>=7.0.0

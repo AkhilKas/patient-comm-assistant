@@ -9,11 +9,8 @@ from dataclasses import dataclass
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
+from .errors import InputTooLongError
 from .prompts import SYSTEM_PROMPT, SIMPLIFY_PROMPT, ANSWER_PROMPT, READABILITY_CHECK_PROMPT
-
-
-class InputTooLongError(ValueError):
-    """Raised when a prompt does not fit in the model's context window."""
 
 
 @dataclass

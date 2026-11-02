@@ -9,6 +9,18 @@ def test_embedding_dimensions(embedding_model):
     assert len(result.embedding) == 384
 
 
+def test_lean_onnx_matches_chroma_default(embedding_model):
+    import numpy as np
+    from chromadb.utils.embedding_functions import ONNXMiniLM_L6_V2
+
+    texts = ["Take omeprazole 20mg once daily.", "Call 911 for chest pain."] * 3
+    default = ONNXMiniLM_L6_V2(preferred_providers=["CPUExecutionProvider"])
+    default.DOWNLOAD_PATH = embedding_model._onnx.DOWNLOAD_PATH
+    expected = np.asarray(default(texts))
+    actual = np.array([r.embedding for r in embedding_model.embed_batch(texts, show_progress=False)])
+    assert np.abs(actual - expected).max() < 1e-5
+
+
 def test_related_texts_are_more_similar(embedding_model):
     query = "What medications should I take?"
     related = embedding_model.similarity(query, "Take omeprazole 20mg daily")

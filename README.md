@@ -58,7 +58,7 @@ A two-stage RAG pipeline that:
 ### Backend
 - **FastAPI** - High-performance async API framework
 - **ChromaDB** - Vector database for semantic search
-- **Sentence Transformers** - Open-source embeddings (all-MiniLM-L6-v2)
+- **ONNX Runtime / Sentence Transformers** - Open-source embeddings (all-MiniLM-L6-v2 runs on ONNX, no PyTorch needed; other presets use Sentence Transformers)
 - **Hugging Face Transformers** - LLM inference (Phi-3, Mistral, Llama) on CUDA / MPS / CPU
 - **MLX (mlx-lm)** - 4-bit LLM inference on Apple Silicon, used automatically when installed (`LLM_BACKEND=auto`)
 - **PyPDF2 / pdfplumber** - PDF text extraction
@@ -97,8 +97,10 @@ patient-comm-assistant/
 │   ├── vite.config.js
 │   └── tailwind.config.js
 ├── tests/                      # pytest suite
+├── scripts/check_memory.py     # Peak-memory check used by CI
 ├── render.yaml                 # Render deployment Blueprint
-├── requirements.txt
+├── requirements-core.txt       # Lean API server (no PyTorch)
+├── requirements.txt            # Full: core + local LLMs + dev tools
 └── README.md
 ```
 
@@ -120,8 +122,10 @@ cd patient-comm-assistant
 python -m venv venv
 source venv/bin/activate  # Windows: venv\Scripts\activate
 
-# Install dependencies
+# Install dependencies (full: includes PyTorch and local LLM support)
 pip install -r requirements.txt
+# ...or the lean server only (no PyTorch, no LLM features):
+# pip install -r requirements-core.txt
 
 # Optional: override defaults (model presets, paths, HF token)
 cp .env.example .env
@@ -158,12 +162,16 @@ npm run dev
 
 `render.yaml` is a [Render Blueprint](https://render.com/docs/blueprint-spec) that deploys both services. In the Render dashboard, choose **New → Blueprint** and select this repo.
 
+Both services run on Render's **free** tier:
+
 | Service | Type | Plan | Notes |
 |---|---|---|---|
-| `patient-comm-api` | Python web service | Standard (1 CPU / 2GB) + 1GB disk | ChromaDB index and model cache live on the disk at `/var/data` |
+| `patient-comm-api` | Python web service | Free (512MB) | Installs `requirements-core.txt` only; models downloaded at build time |
 | `patient-comm-assistant` | Static site | Free | Rewrites `/api/*` to the backend |
 
-- **No LLM in production:** 2GB isn't enough RAM for a local LLM, so `ENABLE_LLM=false`. Upload, Q&A retrieval and readability work. `/simplify` and simplified answers return 503.
+- **Lean backend:** no PyTorch. Embeddings run on ONNX (same vectors as Sentence Transformers). A CI job installs only the core requirements and fails if peak memory goes over 400MB.
+- **No LLM in production:** `ENABLE_LLM=false`. Upload, Q&A retrieval and readability work. `/simplify` and simplified answers return 503.
+- **Free-tier trade-offs:** the backend sleeps after 15 minutes idle, and the first request after that takes about a minute. There's no persistent disk, so **uploaded documents are cleared whenever the backend sleeps or restarts**.
 - **Deploys:** both services deploy automatically from `main` once CI passes.
 - **Backend URL:** the frontend's `/api/*` rewrite assumes the backend is at `https://patient-comm-api.onrender.com`. If Render assigns a different URL, update the rewrite in `render.yaml`, or set `VITE_API_URL` on the static site.
 

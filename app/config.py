@@ -23,6 +23,10 @@ class Settings(BaseSettings):
 
     # Embeddings: preset name from EmbeddingModel.MODEL_PRESETS
     embedding_preset: str = "fast"
+    # "auto" uses ONNX (no PyTorch) for the "fast" preset, else sentence-transformers
+    embedding_backend: str = "auto"
+    # Where the ONNX embedding model is stored (default: ~/.cache/chroma)
+    model_cache_dir: Optional[str] = None
 
     # Generation: set false on hosts without enough RAM for an LLM (~8GB);
     # /simplify and simplified /ask answers then return 503
