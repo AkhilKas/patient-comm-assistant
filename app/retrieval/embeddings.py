@@ -15,6 +15,12 @@ import numpy as np
 
 ONNX_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 
+# ONNX Runtime's memory arena keeps the largest batch's scratch memory for the
+# life of the process, and every text is padded to 256 tokens. Measured growth
+# after load: batch 32 → +460MB, 8 → +109MB, 4 → +43MB. Small batches keep
+# the server within 512MB at little cost in speed.
+ONNX_BATCH_SIZE = 4
+
 
 @dataclass
 class EmbeddingResult:
@@ -104,7 +110,11 @@ class EmbeddingModel:
 
     def _encode(self, texts: list[str], batch_size: int = 32, show_progress: bool = False) -> np.ndarray:
         if self.backend == "onnx":
-            return np.asarray(self._onnx(texts), dtype=np.float32)
+            step = min(batch_size, ONNX_BATCH_SIZE)
+            return np.concatenate([
+                np.asarray(self._onnx(texts[i:i + step]), dtype=np.float32)
+                for i in range(0, len(texts), step)
+            ])
         return self.model.encode(
             texts,
             batch_size=batch_size,
