@@ -84,6 +84,29 @@ def test_simplify_too_long_returns_413(client, monkeypatch):
     assert "9999 tokens" in r.json()["detail"]
 
 
+def test_llm_endpoints_return_503_when_disabled(client, monkeypatch, empty_index):
+    monkeypatch.setattr(settings, "enable_llm", False)
+    assert client.get("/").json()["llm_enabled"] is False
+
+    r = client.post("/simplify", json={"text": COMPLEX_TEXT})
+    assert r.status_code == 503
+
+    state.vector_store.add_chunks(
+        [_chunk("Take omeprazole 20mg once daily.")], show_progress=False
+    )
+    r = client.post("/ask", json={"question": "What medicine?", "use_simplifier": True})
+    assert r.status_code == 503
+    # Plain retrieval still works without the LLM
+    r = client.post("/ask", json={"question": "What medicine?", "use_simplifier": False})
+    assert r.status_code == 200
+
+
+def _chunk(text):
+    from app.ingestion.chunker import TextChunk
+    return TextChunk(content=text, chunk_id="t0", source_file="t.pdf",
+                     chunk_index=0, token_count=8, section="medications")
+
+
 def test_ask_without_documents(client, empty_index):
     r = client.post("/ask", json={"question": "What medicine should I take?"})
     assert r.status_code == 400

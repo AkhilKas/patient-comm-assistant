@@ -97,6 +97,7 @@ patient-comm-assistant/
 │   ├── vite.config.js
 │   └── tailwind.config.js
 ├── tests/                      # pytest suite
+├── render.yaml                 # Render deployment Blueprint
 ├── requirements.txt
 └── README.md
 ```
@@ -112,7 +113,7 @@ patient-comm-assistant/
 
 ```bash
 # Clone repository
-git clone https://github.com/yourusername/patient-comm-assistant.git
+git clone https://github.com/AkhilKas/patient-comm-assistant.git
 cd patient-comm-assistant
 
 # Create virtual environment
@@ -152,6 +153,19 @@ npm run dev
 - Frontend: http://localhost:5173
 - Backend API: http://localhost:8000
 - API Docs: http://localhost:8000/docs
+
+## ☁️ Deployment (Render)
+
+`render.yaml` is a [Render Blueprint](https://render.com/docs/blueprint-spec) that deploys both services. In the Render dashboard, choose **New → Blueprint** and select this repo.
+
+| Service | Type | Plan | Notes |
+|---|---|---|---|
+| `patient-comm-api` | Python web service | Standard (1 CPU / 2GB) + 1GB disk | ChromaDB index and model cache live on the disk at `/var/data` |
+| `patient-comm-assistant` | Static site | Free | Rewrites `/api/*` to the backend |
+
+- **No LLM in production:** 2GB isn't enough RAM for a local LLM, so `ENABLE_LLM=false`. Upload, Q&A retrieval and readability work. `/simplify` and simplified answers return 503.
+- **Deploys:** both services deploy automatically from `main` once CI passes.
+- **Backend URL:** the frontend's `/api/*` rewrite assumes the backend is at `https://patient-comm-api.onrender.com`. If Render assigns a different URL, update the rewrite in `render.yaml`, or set `VITE_API_URL` on the static site.
 
 ## 📊 API Endpoints
 

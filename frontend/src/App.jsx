@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react'
 import { Upload, MessageCircle, FileText, BarChart3, Loader2, CheckCircle, AlertCircle, Trash2, Heart, Sparkles, ArrowRight, X } from 'lucide-react'
 
-const API_URL = import.meta.env.PROD ? '' : '/api'
+// Dev: Vite proxies /api to localhost:8000. Prod: the host rewrites /api/* to
+// the backend (see render.yaml), or set VITE_API_URL to call it directly.
+const API_URL = (import.meta.env.VITE_API_URL || '/api').replace(/\/+$/, '')
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('upload')

@@ -1,0 +1,65 @@
+# Render Blueprint: https://render.com/docs/blueprint-spec
+# Deploy: Render dashboard → New → Blueprint → select this repo.
+#
+# Backend runs on Standard (1 CPU / 2GB). That fits the API and embedding
+# model (~500MB) but not a local LLM, so ENABLE_LLM is off: upload, Q&A
+# retrieval and readability work; /simplify returns 503.
+
+services:
+  # ---------------------------------------------------------------- backend
+  - type: web
+    name: patient-comm-api
+    runtime: python
+    plan: 1c-2g # "Standard": 1 CPU, 2GB RAM
+    region: oregon
+    # CPU-only torch first: the default wheel pulls ~2GB of CUDA libraries
+    buildCommand: >-
+      pip install --upgrade pip &&
+      pip install torch --index-url https://download.pytorch.org/whl/cpu &&
+      pip install -r requirements.txt
+    # A single worker: app state (vector store, models) lives in-process
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /
+    autoDeployTrigger: checksPass # deploy main only after CI passes
+    buildFilter:
+      ignoredPaths:
+        - frontend/**
+        - "**/*.md"
+    envVars:
+      - key: ENABLE_LLM
+        value: "false"
+      - key: LLM_BACKEND
+        value: torch
+      - key: VECTOR_STORE_PATH
+        value: /var/data/vector_store
+      # Cache the embedding model on the disk so restarts don't re-download it
+      - key: HF_HOME
+        value: /var/data/huggingface
+    # Persistent disk keeps the ChromaDB index across deploys and restarts.
+    # Note: services with a disk can't scale out and skip zero-downtime deploys.
+    disk:
+      name: data
+      mountPath: /var/data
+      sizeGB: 1
+
+  # --------------------------------------------------------------- frontend
+  - type: web
+    name: patient-comm-assistant
+    runtime: static
+    buildCommand: cd frontend && npm ci && npm run build
+    staticPublishPath: frontend/dist
+    autoDeployTrigger: checksPass
+    buildFilter:
+      paths:
+        - frontend/**
+    routes:
+      # Proxy API calls to the backend so the browser stays same-origin.
+      # If Render gives the backend a different URL (shown on its dashboard
+      # page), update the destination here.
+      - type: rewrite
+        source: /api/*
+        destination: https://patient-comm-api.onrender.com/*
+      # SPA fallback
+      - type: rewrite
+        source: /*
+        destination: /index.html
