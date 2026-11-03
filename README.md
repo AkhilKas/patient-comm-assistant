@@ -8,6 +8,10 @@ An AI-powered RAG (Retrieval-Augmented Generation) application that transforms c
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.109-009688.svg)
 ![HuggingFace](https://img.shields.io/badge/🤗_HuggingFace-Transformers-yellow.svg)
 
+**🔗 Live demo: [patient-comm-assistant.onrender.com](https://patient-comm-assistant.onrender.com)**
+
+> The demo runs on Render's free tier. The first request after it has been idle can take about a minute while the backend wakes up. Uploaded documents are cleared when it sleeps, and AI simplification is turned off. Please use sample or de-identified documents only, not real patient records.
+
 ## 🎯 Problem Statement
 
 Patients often struggle to understand complex medical discharge instructions, medication guides, and doctor notes. Medical jargon and technical language create barriers to proper self-care, leading to:
@@ -166,8 +170,8 @@ Both services run on Render's **free** tier:
 
 | Service | Type | Plan | Notes |
 |---|---|---|---|
-| `patient-comm-api` | Python web service | Free (512MB) | Installs `requirements-core.txt` only; models downloaded at build time |
-| `patient-comm-assistant` | Static site | Free | Rewrites `/api/*` to the backend |
+| `patient-comm-assistant` | Static site | Free | **The app:** [patient-comm-assistant.onrender.com](https://patient-comm-assistant.onrender.com). Rewrites `/api/*` to the backend. |
+| `patient-comm-api` | Python web service | Free (512MB) | **API only:** [patient-comm-api.onrender.com](https://patient-comm-api.onrender.com) returns the health check JSON. Installs `requirements-core.txt` only; models downloaded at build time. |
 
 - **Lean backend:** no PyTorch. Embeddings run on ONNX (same vectors as Sentence Transformers). A CI job installs only the core requirements and fails if peak memory goes over 400MB.
 - **No LLM in production:** `ENABLE_LLM=false`. Upload, Q&A retrieval and readability work. `/simplify` and simplified answers return 503.
