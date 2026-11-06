@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     # "auto" uses MLX on Apple Silicon when mlx-lm is installed, else torch
     llm_backend: str = "auto"
     load_in_4bit: bool = False  # torch backend on CUDA only, requires bitsandbytes
+    # Replace names, dates, phone numbers, IDs, ... with placeholders before
+    # any text is sent to the LLM, and put them back in the answer
+    deidentify: bool = True
 
     # Vector store
     vector_store_path: str = "data/vector_store"

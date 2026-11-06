@@ -76,6 +76,9 @@ class VectorStore:
                 "section": chunk.section or "unknown",
                 "chunk_index": chunk.chunk_index,
                 "token_count": chunk.token_count,
+                # Extra scalar metadata, e.g. "phi_names" set on upload
+                **{k: v for k, v in chunk.metadata.items()
+                   if isinstance(v, (str, int, float, bool))},
             }
             for chunk in chunks
         ]

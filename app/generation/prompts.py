@@ -10,7 +10,8 @@ Guidelines:
 - Be warm and reassuring, but accurate
 - Use "you" and "your" to speak directly to the patient
 - Break complex information into small, digestible pieces
-- Use everyday comparisons when helpful"""
+- Use everyday comparisons when helpful
+- Personal details may appear as placeholders like [NAME_1], [DATE_2] or [PHONE_1]. Copy them exactly as written, brackets included, wherever you need them"""
 
 SIMPLIFY_PROMPT = """Please simplify the following medical text so that a patient with an 8th-grade reading level can easily understand it. 
 

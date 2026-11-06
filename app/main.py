@@ -24,6 +24,7 @@ from app.retrieval.embeddings import get_embedding_model
 from app.retrieval.vector_store import VectorStore
 from app.evaluation.readability import ReadabilityScorer
 from app.generation.errors import InputTooLongError
+from app.privacy import Deidentifier, find_names
 
 
 # ============================================================
@@ -115,6 +116,7 @@ class QuestionResponse(BaseModel):
     answer: str
     sources: list[dict]
     readability: dict
+    identifiers_removed: int = 0  # replaced before the text reached the LLM
 
 class SimplifyResponse(BaseModel):
     original: str
@@ -122,6 +124,7 @@ class SimplifyResponse(BaseModel):
     readability_before: dict
     readability_after: dict
     improvement: dict
+    identifiers_removed: int = 0  # replaced before the text reached the LLM
 
 class UploadResponse(BaseModel):
     filename: str
@@ -159,6 +162,37 @@ def run_llm(fn, *args):
         return fn(*args)
     except InputTooLongError as e:
         raise HTTPException(status_code=413, detail=str(e))
+
+
+class _NoDeidentification:
+    """Stand-in used when DEIDENTIFY=false."""
+    count = 0
+
+    def redact(self, text: str) -> str:
+        return text
+
+    def restore(self, text: str) -> str:
+        return text
+
+
+def new_deidentifier(known_names=()):
+    """One per request, so a value keeps the same placeholder throughout."""
+    if not settings.deidentify:
+        return _NoDeidentification()
+    return Deidentifier(known_names=list(known_names))
+
+
+PHI_NAMES_KEY = "phi_names"
+
+
+def names_from_results(results) -> list[str]:
+    """Names found in each source document's header at upload time."""
+    names = []
+    for r in results:
+        stored = r.metadata.get(PHI_NAMES_KEY)
+        if stored:
+            names.extend(stored.split("\n"))
+    return list(dict.fromkeys(names))
 
 
 def format_context_for_answer(results) -> str:
@@ -226,9 +260,15 @@ async def upload_document(file: UploadFile = File(...)):
         doc = state.pdf_loader.load(tmp_path)
         chunks = state.chunker.chunk_document(doc)
         
+        # Names from the document's header ("Patient: ..."), kept with every
+        # chunk so they can be removed from chunks that don't include it
+        names = find_names(doc.content)
+
         # Update source file name to original
         for chunk in chunks:
             chunk.source_file = file.filename
+            if names:
+                chunk.metadata[PHI_NAMES_KEY] = "\n".join(names)
         
         # Add to vector store
         state.vector_store.add_chunks(chunks, show_progress=False)
@@ -274,11 +314,16 @@ async def ask_question(request: QuestionRequest):
     ]
     
     # Generate answer
+    identifiers_removed = 0
     if request.use_simplifier and results:
-        # Use LLM to generate simplified answer
+        # Use LLM to generate simplified answer, de-identified on the way in
+        # and re-identified on the way out
         simplifier = get_simplifier()
-        context = "\n\n".join([r.content for r in results])
-        answer = run_llm(simplifier.answer_question, request.question, context)
+        deid = new_deidentifier(names_from_results(results))
+        question = deid.redact(request.question)
+        context = deid.redact("\n\n".join([r.content for r in results]))
+        answer = deid.restore(run_llm(simplifier.answer_question, question, context))
+        identifiers_removed = deid.count
     else:
         # Return formatted context directly
         answer = format_context_for_answer(results)
@@ -290,7 +335,8 @@ async def ask_question(request: QuestionRequest):
         question=request.question,
         answer=answer,
         sources=sources,
-        readability=readability.to_dict()
+        readability=readability.to_dict(),
+        identifiers_removed=identifiers_removed,
     )
 
 
@@ -302,11 +348,13 @@ async def simplify_text(request: SimplifyRequest):
     # Get readability before
     readability_before = state.readability_scorer.score(request.text)
     
-    # Simplify
-    result = run_llm(simplifier.simplify_text, request.text)
-    
+    # Simplify, with identifiers replaced before the text reaches the LLM
+    deid = new_deidentifier()
+    result = run_llm(simplifier.simplify_text, deid.redact(request.text))
+    simplified = deid.restore(result.simplified_text)
+
     # Get readability after
-    readability_after = state.readability_scorer.score(result.simplified_text)
+    readability_after = state.readability_scorer.score(simplified)
     
     # Calculate improvement
     improvement = {
@@ -321,10 +369,11 @@ async def simplify_text(request: SimplifyRequest):
     
     return SimplifyResponse(
         original=request.text,
-        simplified=result.simplified_text,
+        simplified=simplified,
         readability_before=readability_before.to_dict(),
         readability_after=readability_after.to_dict(),
-        improvement=improvement
+        improvement=improvement,
+        identifiers_removed=deid.count,
     )
 
 
