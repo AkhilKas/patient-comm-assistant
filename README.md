@@ -10,7 +10,7 @@ An AI-powered RAG (Retrieval-Augmented Generation) application that transforms c
 
 **🔗 Live demo: [patient-comm-assistant.onrender.com](https://patient-comm-assistant.onrender.com)**
 
-> The demo runs on Render's free tier. The first request after it has been idle can take about a minute while the backend wakes up. Uploaded documents are cleared when it sleeps, and AI simplification is turned off. Please use sample or de-identified documents only, not real patient records.
+> The demo runs on Render's free tier. The first request after it has been idle can take about a minute while the backend wakes up. Uploaded documents are cleared when it sleeps. AI simplification sends text to Google's Gemini API after names, dates and contact details have been replaced, and Google may use free-tier requests to improve its products. Please use sample or de-identified documents only, not real patient records.
 
 ## 🎯 Problem Statement
 
@@ -49,7 +49,7 @@ A two-stage RAG pipeline that:
                                                          │
 ┌─────────────────┐     ┌─────────────────┐     ┌────────▼────────┐
 │  Simplified     │◀────│   Generation    │◀────│    Retrieval    │
-│   Response      │     │ (Phi-3/Mistral) │     │ (Semantic Search│
+│   Response      │     │ (Gemini/Phi-3)  │     │ (Semantic Search│
 └─────────────────┘     └─────────────────┘     └─────────────────┘
                                 │
                         ┌───────▼───────┐
@@ -64,7 +64,8 @@ A two-stage RAG pipeline that:
 - **FastAPI** - High-performance async API framework
 - **ChromaDB** - Vector database for semantic search
 - **ONNX Runtime / Sentence Transformers** - Open-source embeddings (all-MiniLM-L6-v2 runs on ONNX, no PyTorch needed; other presets use Sentence Transformers)
-- **Hugging Face Transformers** - LLM inference (Phi-3, Mistral, Llama) on CUDA / MPS / CPU
+- **Gemini API** - Default LLM when `GEMINI_API_KEY` is set (plain REST via httpx, no SDK)
+- **Hugging Face Transformers** - Local LLM inference (Phi-3, Mistral, Llama) on CUDA / MPS / CPU, used as the fallback or on its own
 - **MLX (mlx-lm)** - 4-bit LLM inference on Apple Silicon, used automatically when installed (`LLM_BACKEND=auto`)
 - **PyPDF2 / pdfplumber** - PDF text extraction
 - **textstat** - Readability metrics calculation
@@ -116,7 +117,7 @@ patient-comm-assistant/
 ### Prerequisites
 - Python 3.11+ (required by transformers 5)
 - Node.js 18+
-- 8GB+ RAM for LLM inference (4GB+ with the 4-bit MLX models on Apple Silicon)
+- A Gemini API key ([Google AI Studio](https://aistudio.google.com/apikey)), **or** 8GB+ RAM to run the local LLM (4GB+ with the 4-bit MLX models on Apple Silicon)
 
 ### Backend Setup
 
@@ -165,6 +166,20 @@ npm run dev
 - Backend API: http://localhost:8000
 - API Docs: http://localhost:8000/docs
 
+## 🤖 LLM Providers
+
+| `LLM_PROVIDER` | Behaviour |
+|---|---|
+| `auto` (default) | Gemini if `GEMINI_API_KEY` is set, with the local model as fallback when it's installed. Otherwise the local model. |
+| `gemini` | Gemini only (plus the local fallback if `LLM_FALLBACK=true` and it's installed). |
+| `local` | The local transformers/MLX model only. Nothing leaves your machine. |
+
+- **Fallback:** when Gemini times out, is rate limited (429), has a server error (5xx) or returns no answer, the request is retried on the local model, which loads on first use. A rejected request (bad key, unknown model) is not retried, so configuration mistakes aren't hidden. `/simplify` reports which model answered in `model_used`.
+- **No local model on Render:** the lean install has no PyTorch, so there a Gemini failure returns 503.
+- **Model:** `GEMINI_MODEL`, default `gemini-3.5-flash-lite`. The key is sent in a header, never in the URL.
+- **Quota protection:** LLM requests are limited to `LLM_REQUESTS_PER_MINUTE` per client (default 10) and `LLM_REQUESTS_PER_DAY` overall (default 500), returning 429 with `Retry-After`. `/simplify` input is capped at `MAX_INPUT_CHARS` (20,000).
+- **Privacy:** text is de-identified before it reaches any provider (next section). On Gemini's free tier, Google may use prompts and responses to improve its products. Use `LLM_PROVIDER=local` for anything sensitive.
+
 ## 🔒 De-identification
 
 Before any text is sent to the LLM (`/simplify`, and `/ask` with `use_simplifier`), `app/privacy/deid.py` replaces patient identifiers with numbered placeholders. The real values are put back into the answer, so the patient still sees "Call Dr. Patel at (413) 555-0147", but the model only ever sees "Call [NAME_1] at [PHONE_1]".
@@ -193,7 +208,7 @@ Both services run on Render's **free** tier:
 | `patient-comm-api` | Python web service | Free (512MB) | **API only:** [patient-comm-api.onrender.com](https://patient-comm-api.onrender.com) returns the health check JSON. Installs `requirements-core.txt` only; models downloaded at build time. |
 
 - **Lean backend:** no PyTorch. Embeddings run on ONNX (same vectors as Sentence Transformers). A CI job installs only the core requirements and fails if peak memory goes over 400MB.
-- **No LLM in production:** `ENABLE_LLM=false`. Upload, Q&A retrieval and readability work. `/simplify` and simplified answers return 503.
+- **LLM in production:** Gemini. Add `GEMINI_API_KEY` in the Render dashboard (the Blueprint prompts for it; it's never stored in `render.yaml`). Without a key, upload, Q&A retrieval and readability still work, and `/simplify` and simplified answers return 503.
 - **Free-tier trade-offs:** the backend sleeps after 15 minutes idle, and the first request after that takes about a minute. There's no persistent disk, so **uploaded documents are cleared whenever the backend sleeps or restarts**.
 - **Deploys:** both services deploy automatically from `main` once CI passes.
 - **Backend URL:** the frontend's `/api/*` rewrite assumes the backend is at `https://patient-comm-api.onrender.com`. If Render assigns a different URL, update the rewrite in `render.yaml`, or set `VITE_API_URL` on the static site.

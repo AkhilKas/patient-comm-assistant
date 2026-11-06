@@ -16,6 +16,7 @@ chromadb>=1.0.0
 fastapi>=0.109.0
 uvicorn>=0.27.0
 python-multipart>=0.0.6
+httpx>=0.24.0  # Gemini API calls (already a chromadb dependency)
 
 # Readability & Evaluation
 textstat>=0.7.3

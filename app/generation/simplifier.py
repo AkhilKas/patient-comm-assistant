@@ -5,22 +5,12 @@ import os
 import platform
 import sys
 from typing import Optional
-from dataclasses import dataclass
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
+from .base import BaseSimplifier, SimplificationResult  # noqa: F401 (re-exported)
 from .errors import InputTooLongError
-from .prompts import SYSTEM_PROMPT, SIMPLIFY_PROMPT, ANSWER_PROMPT, READABILITY_CHECK_PROMPT
-
-
-@dataclass
-class SimplificationResult:
-    """Container for simplification results."""
-    original_text: str
-    simplified_text: str
-    model_used: str
-    readability_before: Optional[dict] = None
-    readability_after: Optional[dict] = None
+from .prompts import SYSTEM_PROMPT
 
 
 def mlx_available() -> bool:
@@ -32,7 +22,7 @@ def mlx_available() -> bool:
     )
 
 
-class MedicalSimplifier:
+class MedicalSimplifier(BaseSimplifier):
     """
     Two-stage medical text simplifier using open-source LLMs.
 
@@ -251,55 +241,6 @@ class MedicalSimplifier:
         response = self.tokenizer.decode(generated_tokens, skip_special_tokens=True)
 
         return response.strip()
-
-    def simplify_text(self, text: str) -> SimplificationResult:
-        """
-        Simplify medical text to 8th-grade reading level.
-
-        Args:
-            text: Medical text to simplify
-
-        Returns:
-            SimplificationResult with original and simplified text
-        """
-        prompt = SIMPLIFY_PROMPT.format(text=text)
-        simplified = self._generate(prompt)
-
-        return SimplificationResult(
-            original_text=text,
-            simplified_text=simplified,
-            model_used=self.model_name
-        )
-
-    def answer_question(self, question: str, context: str) -> str:
-        """
-        Answer a patient question using retrieved context.
-
-        Args:
-            question: Patient's question
-            context: Retrieved context from vector store
-
-        Returns:
-            Simplified answer
-        """
-        prompt = ANSWER_PROMPT.format(question=question, context=context)
-        return self._generate(prompt)
-
-    def simplify_with_verification(self, text: str) -> SimplificationResult:
-        """
-        Two-stage simplification with readability verification.
-
-        Stage 1: Initial simplification
-        Stage 2: Check and re-simplify if needed
-        """
-        # Stage 1: Initial simplification
-        result = self.simplify_text(text)
-
-        # Stage 2: Verification (optional re-simplification)
-        verification_prompt = READABILITY_CHECK_PROMPT.format(text=result.simplified_text)
-        result.simplified_text = self._generate(verification_prompt)
-
-        return result
 
 
 def create_simplifier(

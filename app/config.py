@@ -28,9 +28,21 @@ class Settings(BaseSettings):
     # Where the ONNX embedding model is stored (default: ~/.cache/chroma)
     model_cache_dir: Optional[str] = None
 
-    # Generation: set false on hosts without enough RAM for an LLM (~8GB);
+    # Generation: set false to turn AI simplification off entirely;
     # /simplify and simplified /ask answers then return 503
     enable_llm: bool = True
+    # "auto": Gemini if GEMINI_API_KEY is set (local model as fallback when
+    # installed), else the local model. "gemini" or "local" to force one.
+    llm_provider: str = "auto"
+    gemini_api_key: Optional[str] = None
+    gemini_model: str = "gemini-3.5-flash-lite"
+    gemini_timeout: float = 30.0
+    # Fall back to the local model when Gemini times out, is rate limited or down
+    llm_fallback: bool = True
+    # Abuse/quota protection for LLM endpoints (0 = no limit)
+    llm_requests_per_minute: int = 10  # per client
+    llm_requests_per_day: int = 500  # all clients combined
+    max_input_chars: int = 20000
     # Preset name from MedicalSimplifier.MODEL_PRESETS
     llm_preset: str = "phi3"
     # "auto" uses MLX on Apple Silicon when mlx-lm is installed, else torch

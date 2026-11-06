@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Upload, MessageCircle, FileText, BarChart3, Loader2, CheckCircle, AlertCircle, Trash2, Heart, Sparkles, ArrowRight, X } from 'lucide-react'
+import { Upload, MessageCircle, FileText, BarChart3, Loader2, CheckCircle, AlertCircle, Trash2, Heart, Sparkles, ArrowRight, X, ShieldCheck } from 'lucide-react'
 
 // Dev: Vite proxies /api to localhost:8000. Prod: the host rewrites /api/* to
 // the backend (see render.yaml), or set VITE_API_URL to call it directly.
@@ -415,8 +415,11 @@ function SimplifyTab() {
       </div>
 
       <div className="mb-4 p-4 bg-amber-500/10 border border-amber-500/20 rounded-xl flex items-center gap-3">
-        <Sparkles className="w-5 h-5 text-amber-400" />
-        <p className="text-amber-400 text-sm">First request loads the AI model (~30-60 seconds)</p>
+        <ShieldCheck className="w-5 h-5 text-amber-400 shrink-0" />
+        <p className="text-amber-400 text-sm">
+          Names, dates and contact details are replaced before your text is sent to the AI model,
+          then put back in the answer. Please use sample text, not real patient records.
+        </p>
       </div>
 
       <form onSubmit={handleSimplify}>
@@ -425,6 +428,7 @@ function SimplifyTab() {
             value={text}
             onChange={(e) => setText(e.target.value)}
             placeholder="Paste complex medical text here..."
+            maxLength={20000}
             className="w-full p-5 bg-slate-800/50 border border-slate-700 rounded-2xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent resize-none text-lg"
             rows={5}
           />
