@@ -34,6 +34,7 @@ A two-stage RAG pipeline that:
 - **Intelligent Chunking**: Section-aware text splitting optimized for medical documents
 - **Semantic Search**: Vector similarity search using Sentence Transformers embeddings
 - **AI Simplification**: Two-stage LLM pipeline for text simplification
+- **De-identification**: Names, dates, phone numbers, IDs and addresses are replaced with placeholders before any text reaches the LLM, then restored in the answer
 - **Readability Scoring**: Automated Flesch-Kincaid, Gunning Fog, SMOG, and Coleman-Liau analysis
 - **Interactive Q&A**: Ask questions about uploaded documents in natural language
 - **Modern Web Interface**: Responsive React frontend with real-time feedback
@@ -90,6 +91,8 @@ patient-comm-assistant/
 │   ├── generation/
 │   │   ├── simplifier.py       # LLM simplification pipeline
 │   │   └── prompts.py          # Prompt templates
+│   ├── privacy/
+│   │   └── deid.py             # De-identification before the LLM
 │   └── evaluation/
 │       └── readability.py      # Readability scoring
 ├── frontend/
@@ -161,6 +164,22 @@ npm run dev
 - Frontend: http://localhost:5173
 - Backend API: http://localhost:8000
 - API Docs: http://localhost:8000/docs
+
+## 🔒 De-identification
+
+Before any text is sent to the LLM (`/simplify`, and `/ask` with `use_simplifier`), `app/privacy/deid.py` replaces patient identifiers with numbered placeholders. The real values are put back into the answer, so the patient still sees "Call Dr. Patel at (413) 555-0147", but the model only ever sees "Call [NAME_1] at [PHONE_1]".
+
+```
+Patient: [NAME_1]    DOB: [DATE_1]    MRN: [ID_1]
+[NAME_2] is a 67-year-old man admitted with chest pain. See [NAME_3] on [DATE_2].
+```
+
+- **What it catches:** labelled fields (`Patient:`, `DOB:`, `MRN:`, `Address:`, `Attending:`, ...), emails, URLs, phone numbers, SSNs, dates, street addresses, ZIP codes, long ID numbers, ages over 89, and titled names ("Dr. Patel", "Jane Doe, MD"). Names from a document's header are saved at upload, so they are also removed from chunks that don't contain the header.
+- **How it works:** rules only, with no model, so it adds nothing to the backend's memory. The placeholder mapping lives in memory for the one request and is never stored or sent.
+- **Limits:** a name with no label, title or earlier mention (e.g. "your daughter Maria") is not detected. This reduces what reaches the LLM but is not a guarantee, and the app is not HIPAA compliant. Use sample or de-identified documents.
+- **Check a document:** `python -m app.privacy note.pdf` prints the text as the LLM would see it, followed by the list of replacements.
+- **Turn it off:** `DEIDENTIFY=false` (not recommended with a hosted LLM).
+- Tests (`tests/test_deid.py`, `tests/test_api.py`) fail if any identifier from a synthetic note reaches a recording fake LLM.
 
 ## ☁️ Deployment (Render)
 
