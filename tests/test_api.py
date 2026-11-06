@@ -107,6 +107,69 @@ def _chunk(text):
                      chunk_index=0, token_count=8, section="medications")
 
 
+class RecordingLLM:
+    """Fake simplifier that records its inputs and echoes the placeholders."""
+
+    def __init__(self):
+        self.seen = []
+
+    def simplify_text(self, text):
+        from types import SimpleNamespace
+        self.seen.append(text)
+        return SimpleNamespace(simplified_text=f"Simple: {text}")
+
+    def answer_question(self, question, context):
+        self.seen += [question, context]
+        return f"Answer for {question}\n{context}"
+
+
+def test_simplify_never_sends_identifiers(client, monkeypatch):
+    from test_deid import IDENTIFIERS, NOTE
+
+    llm = RecordingLLM()
+    monkeypatch.setattr(state, "simplifier", llm)
+    r = client.post("/simplify", json={"text": NOTE})
+    assert r.status_code == 200
+    sent = "\n".join(llm.seen)
+    leaked = [i for i in IDENTIFIERS if i in sent]
+    assert not leaked, f"sent to the LLM: {leaked}"
+    # The patient still gets their real details back
+    data = r.json()
+    assert data["simplified"] == f"Simple: {NOTE}"
+    assert data["identifiers_removed"] >= 15
+
+
+def test_ask_removes_header_names_from_other_chunks(client, monkeypatch, empty_index):
+    llm = RecordingLLM()
+    monkeypatch.setattr(state, "simplifier", llm)
+    pdf = make_pdf([
+        "Patient: Jane Roe    DOB: 02/14/1971",
+        "MEDICATIONS",
+        "Jane should take omeprazole 20mg once daily before breakfast.",
+    ])
+    assert client.post("/upload", files={"file": ("roe.pdf", pdf, "application/pdf")}).status_code == 200
+
+    # Only the medications chunk is retrieved; it has no "Patient:" label
+    r = client.post("/ask", json={"question": "What medicine do I take before breakfast?",
+                                  "use_simplifier": True, "n_results": 1})
+    assert r.status_code == 200
+    sent = "\n".join(llm.seen)
+    assert "omeprazole" in sent
+    assert "Jane" not in sent and "Roe" not in sent and "02/14/1971" not in sent
+    assert "Patient:" not in sent  # the header chunk wasn't retrieved
+    assert "Jane should take omeprazole" in r.json()["answer"]
+    assert r.json()["identifiers_removed"] == 1
+
+
+def test_deidentify_can_be_disabled(client, monkeypatch):
+    llm = RecordingLLM()
+    monkeypatch.setattr(state, "simplifier", llm)
+    monkeypatch.setattr(settings, "deidentify", False)
+    r = client.post("/simplify", json={"text": "Patient: Jane Roe has GERD."})
+    assert llm.seen == ["Patient: Jane Roe has GERD."]
+    assert r.json()["identifiers_removed"] == 0
+
+
 def test_ask_without_documents(client, empty_index):
     r = client.post("/ask", json={"question": "What medicine should I take?"})
     assert r.status_code == 400
