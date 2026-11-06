@@ -9,9 +9,9 @@ from pathlib import Path
 from typing import Optional
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import tempfile
 
 # Add parent to path
@@ -23,7 +23,9 @@ from app.ingestion.chunker import MedicalTextChunker
 from app.retrieval.embeddings import get_embedding_model
 from app.retrieval.vector_store import VectorStore
 from app.evaluation.readability import ReadabilityScorer
-from app.generation.errors import InputTooLongError
+from app.generation.errors import InputTooLongError, LLMRequestError, LLMUnavailableError
+from app.generation.providers import LLMNotConfiguredError, build_provider_chain
+from app.ratelimit import LLMRateLimiter, RateLimited, client_id
 from app.privacy import Deidentifier, find_names
 
 
@@ -34,7 +36,12 @@ from app.privacy import Deidentifier, find_names
 class AppState:
     vector_store: Optional[VectorStore] = None
     embedding_model = None
-    simplifier = None  # Loaded lazily to save memory
+    simplifier = None  # Provider chain; models load on first use
+    llm_error: Optional[str] = None  # why no LLM is available, if so
+    rate_limiter = LLMRateLimiter(
+        per_client_per_minute=settings.llm_requests_per_minute,
+        per_day=settings.llm_requests_per_day,
+    )
     readability_scorer = ReadabilityScorer(target_grade_level=settings.target_grade_level)
     chunker = MedicalTextChunker(chunk_size=settings.chunk_size, chunk_overlap=settings.chunk_overlap)
     pdf_loader = MedicalPDFLoader()
@@ -66,6 +73,16 @@ async def lifespan(app: FastAPI):
         embedding_model=state.embedding_model
     )
     print(f"✓ Vector store ready ({state.vector_store.get_chunk_count()} chunks)")
+
+    # LLM providers (nothing is loaded or called yet)
+    if settings.enable_llm:
+        try:
+            state.simplifier = build_provider_chain(settings)
+            state.llm_error = None
+            print(f"✓ LLM: {' → '.join(state.simplifier.labels)}")
+        except LLMNotConfiguredError as e:
+            state.simplifier, state.llm_error = None, str(e)
+            print(f"⚠ {e}")
     
     print("✅ Backend ready!")
     
@@ -101,9 +118,9 @@ app.add_middleware(
 # ============================================================
 
 class QuestionRequest(BaseModel):
-    question: str
+    question: str = Field(max_length=2000)
     use_simplifier: bool = False  # Set to True to use LLM simplification
-    n_results: int = 3
+    n_results: int = Field(default=3, ge=1, le=10)
 
 class SimplifyRequest(BaseModel):
     text: str
@@ -121,6 +138,7 @@ class QuestionResponse(BaseModel):
 class SimplifyResponse(BaseModel):
     original: str
     simplified: str
+    model_used: Optional[str] = None
     readability_before: dict
     readability_after: dict
     improvement: dict
@@ -137,31 +155,41 @@ class UploadResponse(BaseModel):
 # Helper Functions
 # ============================================================
 
-def get_simplifier():
-    """Lazy load the LLM simplifier to save memory."""
-    if not settings.enable_llm:
-        raise HTTPException(
-            status_code=503,
-            detail="AI simplification is not available on this deployment.",
-        )
-    if state.simplifier is None:
-        print("Loading LLM simplifier (first request, may take a moment)...")
-        from app.generation.simplifier import MedicalSimplifier
-        state.simplifier = MedicalSimplifier(
-            use_preset=settings.llm_preset,
-            backend=settings.llm_backend,
-            load_in_4bit=settings.load_in_4bit,
-            hf_token=settings.hf_token,
-        )
+LLM_OFF = "AI simplification is not available on this deployment."
+
+
+def get_simplifier(request: Request):
+    """The LLM provider chain, after checking it's enabled and rate limits."""
+    if not settings.enable_llm or state.simplifier is None:
+        if settings.enable_llm and state.llm_error:
+            print(f"⚠ LLM request refused: {state.llm_error}")
+        raise HTTPException(status_code=503, detail=LLM_OFF)
+    try:
+        state.rate_limiter.check(client_id(request))
+    except RateLimited as e:
+        raise HTTPException(status_code=429, detail=str(e),
+                            headers={"Retry-After": str(e.retry_after)})
     return state.simplifier
 
 
 def run_llm(fn, *args):
-    """Call a simplifier method, mapping oversized input to HTTP 413."""
+    """Call a simplifier method, mapping provider errors to HTTP errors.
+
+    Details are logged, not returned, so provider messages stay server-side.
+    """
     try:
         return fn(*args)
     except InputTooLongError as e:
         raise HTTPException(status_code=413, detail=str(e))
+    except LLMUnavailableError as e:
+        print(f"⚠ LLM unavailable: {e}")
+        raise HTTPException(
+            status_code=503,
+            detail="AI simplification is temporarily unavailable. Please try again in a minute.",
+        )
+    except LLMRequestError as e:
+        print(f"✗ LLM request rejected: {e}")
+        raise HTTPException(status_code=502, detail="The AI provider rejected the request.")
 
 
 class _NoDeidentification:
@@ -229,7 +257,8 @@ async def root():
         "status": "healthy",
         "service": "Patient Communication Assistant",
         "chunks_indexed": state.vector_store.get_chunk_count() if state.vector_store else 0,
-        "llm_enabled": settings.enable_llm,
+        "llm_enabled": settings.enable_llm and state.simplifier is not None,
+        "llm_providers": getattr(state.simplifier, "labels", []) if settings.enable_llm else [],
     }
 
 
@@ -287,8 +316,10 @@ async def upload_document(file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=f"Failed to process PDF: {str(e)}")
 
 
+# Plain `def` (not async): FastAPI runs these in a threadpool, so a slow LLM
+# call doesn't block other requests
 @app.post("/ask", response_model=QuestionResponse)
-async def ask_question(request: QuestionRequest):
+def ask_question(request: QuestionRequest, http_request: Request):
     """
     Ask a question about uploaded documents.
     Returns relevant information with readability score.
@@ -318,7 +349,7 @@ async def ask_question(request: QuestionRequest):
     if request.use_simplifier and results:
         # Use LLM to generate simplified answer, de-identified on the way in
         # and re-identified on the way out
-        simplifier = get_simplifier()
+        simplifier = get_simplifier(http_request)
         deid = new_deidentifier(names_from_results(results))
         question = deid.redact(request.question)
         context = deid.redact("\n\n".join([r.content for r in results]))
@@ -341,9 +372,14 @@ async def ask_question(request: QuestionRequest):
 
 
 @app.post("/simplify", response_model=SimplifyResponse)
-async def simplify_text(request: SimplifyRequest):
+def simplify_text(request: SimplifyRequest, http_request: Request):
     """Simplify medical text to patient-friendly language."""
-    simplifier = get_simplifier()
+    if len(request.text) > settings.max_input_chars:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Text is {len(request.text)} characters; the limit is {settings.max_input_chars}.",
+        )
+    simplifier = get_simplifier(http_request)
     
     # Get readability before
     readability_before = state.readability_scorer.score(request.text)
@@ -370,6 +406,7 @@ async def simplify_text(request: SimplifyRequest):
     return SimplifyResponse(
         original=request.text,
         simplified=simplified,
+        model_used=getattr(result, "model_used", None),
         readability_before=readability_before.to_dict(),
         readability_after=readability_after.to_dict(),
         improvement=improvement,
