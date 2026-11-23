@@ -14,4 +14,4 @@ mlx-lm>=0.32.0; sys_platform == "darwin" and platform_machine == "arm64"  # Appl
 
 # Dev
 pytest>=7.0.0
-httpx>=0.24.0  # required by fastapi.testclient
+httpx>=0.24.0  # Gemini API calls and fastapi.testclient

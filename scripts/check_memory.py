@@ -47,7 +47,11 @@ def main() -> int:
 
     env = {
         **os.environ,
-        "ENABLE_LLM": "false",
+        # As on Render before a key is added: LLM on, Gemini only, no key.
+        # (LLM_PROVIDER=gemini so a full install doesn't load a local model.)
+        "ENABLE_LLM": "true",
+        "LLM_PROVIDER": "gemini",
+        "GEMINI_API_KEY": "",
         "VECTOR_STORE_PATH": tempfile.mkdtemp(prefix="vs-"),
     }
     server = subprocess.Popen(

@@ -28,6 +28,12 @@ def empty_index(client):
     state.vector_store.clear()
 
 
+@pytest.fixture(autouse=True)
+def no_rate_limits(monkeypatch):
+    from app.ratelimit import LLMRateLimiter
+    monkeypatch.setattr(state, "rate_limiter", LLMRateLimiter(0, 0))
+
+
 def test_health(client):
     r = client.get("/")
     assert r.status_code == 200
@@ -168,6 +174,70 @@ def test_deidentify_can_be_disabled(client, monkeypatch):
     r = client.post("/simplify", json={"text": "Patient: Jane Roe has GERD."})
     assert llm.seen == ["Patient: Jane Roe has GERD."]
     assert r.json()["identifiers_removed"] == 0
+
+
+class Failing:
+    def __init__(self, error):
+        self.error = error
+
+    def simplify_text(self, text):
+        raise self.error
+
+
+@pytest.mark.parametrize("error, status", [
+    ("unavailable", 503),
+    ("rejected", 502),
+])
+def test_provider_errors_map_to_http(client, monkeypatch, error, status):
+    from app.generation.errors import LLMRequestError, LLMUnavailableError
+    exc = (LLMUnavailableError if error == "unavailable" else LLMRequestError)("secret detail")
+    monkeypatch.setattr(state, "simplifier", Failing(exc))
+    r = client.post("/simplify", json={"text": COMPLEX_TEXT})
+    assert r.status_code == status
+    assert "secret detail" not in r.json()["detail"]  # provider details stay in the logs
+
+
+def test_rate_limit_returns_429(client, monkeypatch):
+    from app.ratelimit import LLMRateLimiter
+    monkeypatch.setattr(state, "simplifier", RecordingLLM())
+    monkeypatch.setattr(state, "rate_limiter", LLMRateLimiter(per_client_per_minute=2, per_day=0))
+    codes = [client.post("/simplify", json={"text": "Take one pill."}).status_code for _ in range(3)]
+    assert codes == [200, 200, 429]
+    r = client.post("/simplify", json={"text": "Take one pill."})
+    assert int(r.headers["Retry-After"]) >= 1
+    # Endpoints that don't use the LLM aren't limited
+    assert client.post("/readability", json={"text": COMPLEX_TEXT}).status_code == 200
+
+
+def test_long_text_rejected_before_llm(client, monkeypatch):
+    llm = RecordingLLM()
+    monkeypatch.setattr(state, "simplifier", llm)
+    r = client.post("/simplify", json={"text": "x" * (settings.max_input_chars + 1)})
+    assert r.status_code == 413
+    assert llm.seen == []
+
+
+def test_n_results_is_bounded(client):
+    r = client.post("/ask", json={"question": "What medicine?", "n_results": 1000})
+    assert r.status_code == 422
+
+
+def test_no_provider_returns_503(client, monkeypatch):
+    monkeypatch.setattr(state, "simplifier", None)
+    monkeypatch.setattr(state, "llm_error", "No LLM available")
+    assert client.get("/").json()["llm_enabled"] is False
+    r = client.post("/simplify", json={"text": COMPLEX_TEXT})
+    assert r.status_code == 503
+
+
+def test_simplify_reports_model(client, monkeypatch):
+    from app.generation.providers import ProviderChain
+    from test_gemini import Fake
+    chain = ProviderChain([("gemini (test)", lambda: Fake("gemini-test"))])
+    monkeypatch.setattr(state, "simplifier", chain)
+    r = client.post("/simplify", json={"text": COMPLEX_TEXT})
+    assert r.json()["model_used"] == "gemini-test"
+    assert client.get("/").json()["llm_providers"] == ["gemini (test)"]
 
 
 def test_ask_without_documents(client, empty_index):
